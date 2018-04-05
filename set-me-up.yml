@@ -1,0 +1,137 @@
+---
+## This playbook is used to setup my Fedora27 workstation for development
+
+# Apply configuration to all hosts specified in the 'hosts' inventory
+# Ideally should be localhost
+- hosts: localhost
+  connection: local
+  become: yes
+  become_method: sudo
+
+  tasks:
+  - name: Get Fedora Version
+    command: rpm -E %fedora
+    register: fedora_version
+    ignore_errors: true
+
+  - name: Install 'vim'
+    dnf:
+      name: vim
+      state: latest
+
+  - name: Install Google Chrome
+    dnf:
+      name: https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm
+      state: latest
+
+  - name: Import keys for Microsoft Visual Studio Repo
+    rpm_key:
+      key: https://packages.microsoft.com/keys/microsoft.asc
+      state: present
+
+  - name: Setup Repo for Microsoft Visual Studio
+    copy:
+      src: ./vscode.repo
+      dest: /etc/yum.repos.d/vscode.repo
+      force: no
+
+  #- name: Update the cache
+  #  dnf: 
+  #    update_cache: yes
+
+  - name: Install Microsoft Visual Code
+    dnf:
+      name: code
+      state: latest
+
+  - name: Install Docker
+    dnf:
+      name: docker
+      state: latest
+
+  - name: Update the Docker Daemon with appropriate insecure registries
+    copy:
+      src: ./docker-daemon.json
+      dest: /etc/docker/daemon.json
+      force: no
+
+  - name: Restart the Docker service
+    systemd: 
+      daemon_reload: yes
+      enabled: yes
+      state: restarted
+      name: docker
+
+  - name: Add docker group
+    group:
+      name: docker
+      state: present
+      
+  #- name: Install Golang
+  #  dnf:
+  #    name: golang
+  #    state: latest
+
+  - name: Download CA certificate for Red Hat VPN
+    get_url:
+      url: https://password.corp.redhat.com/RH-IT-Root-CA.crt
+      dest: /etc/pki/tls/certs/2018-RH-IT-Root-CA.pem
+      force: no
+      mode: 0644
+
+  - name: Download VPN configuration for various cities
+    get_url:
+      url: http://pkgs.devel.redhat.com/cgit/rpms/redhat-internal-NetworkManager-openvpn-profiles/plain/redhat-internal-NetworkManager-openvpn-profiles-0.1/{{ item }}.ovpn?h=it-csb-rhel-7
+      dest: /etc/NetworkManager/system-connections/{{ item }}.ovpn
+      force: no
+      mode: 0600
+    with_items:
+      - AMS2
+      - PEK2
+      - BNE
+      - BRQ
+      - FAB
+      - PHX2
+      - RDU2
+      - GRU2
+      - SIN2
+      - NRT
+      - TLV
+
+  - name: Restore the permissions for VPN files
+    command: restorecon -RvF {{ item }}
+    with_items:
+      - /etc/pki/tls/certs/
+      - /etc/NetworkManager/system-connections/
+
+  - name: Refresh connection configuration
+    command: nmcli connection reload
+
+  #- name: Install Melbourne Printer
+  #  dnf:
+  #    name: system-config-printer, devassistant, devassistant-gui
+  #    state: present
+
+  - name: Setup Printers
+    lineinfile:
+      path: /etc/cups/cups-browsed.conf
+      state: present
+      line: BrowsePoll cups.mel.redhat.com
+      insertafter: EOF
+
+  - name: Restart the Browse Printer service
+    systemd: 
+      daemon_reload: yes
+      enabled: yes
+      state: restarted
+      name: cups-browsed
+
+  - name: Install snapd Package Manager
+    dnf:
+      name: snapd
+      state: latest
+     
+  - name: Install maven
+    dnf:
+      name: maven
+      state: latest
